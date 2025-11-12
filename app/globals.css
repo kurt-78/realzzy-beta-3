@@ -25,3 +25,39 @@ body {
     text-wrap: balance;
   }
 }
+
+/* Custom animations for video recorder */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.animate-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Ensure videos cover their container */
+video {
+  object-fit: cover;
+}
+
+/* Mobile optimizations */
+@media (max-width: 768px) {
+  body {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+}
+
+/* Portrait orientation lock hint */
+@media (orientation: landscape) and (max-width: 1024px) {
+  .portrait-warning {
+    display: flex;
+  }
+}
