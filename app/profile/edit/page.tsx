@@ -66,8 +66,8 @@ function VideoRecorder({
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: facing, width: { ideal: 1080 }, height: { ideal: 1920 } },
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        video: { facingMode: facing },
+        audio: true,
       });
 
       streamRef.current = stream;
