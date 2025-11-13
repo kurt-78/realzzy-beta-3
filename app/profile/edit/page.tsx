@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import { Play, Trash2, Plus, Loader2, RotateCcw, X } from "lucide-react";
+import DateOfBirthPicker from "@/components/DateOfBirthPicker";
 
 // Import video functions
 import {
@@ -17,7 +18,7 @@ import {
 } from "@/lib/supabase-videos";
 import type { ProfileVideo } from "@/types/profile-videos";
 
-// Video Recorder Component (inline to avoid import issues)
+// Video Recorder Component (inline)
 function VideoRecorder({
   onVideoRecorded,
   onCancel,
@@ -559,6 +560,17 @@ export default function ProfileEditPage() {
       return;
     }
 
+    // Age validation - must be 18 or older
+    if (age !== null && age < 18) {
+      toast.error("You must be at least 18 years old to use this app");
+      return;
+    }
+
+    if (age === null) {
+      toast.error("Please select a valid date of birth");
+      return;
+    }
+
     setLoading(true);
     const savingToast = toast.loading("Saving your profile...");
 
@@ -841,29 +853,13 @@ export default function ProfileEditPage() {
               )}
             </div>
 
-            {/* Date of Birth */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Date of Birth <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="date"
-                required
-                value={dateOfBirth}
-                onChange={(e) => {
-                  setDateOfBirth(e.target.value);
-                  if (e.target.value) {
-                    setAge(calculateAge(e.target.value));
-                  }
-                }}
-                className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-pink-500"
-              />
-              {age !== null && (
-                <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-                  You are {age} years old
-                </p>
-              )}
-            </div>
+            {/* Date of Birth - NEW COMPONENT */}
+            <DateOfBirthPicker
+              value={dateOfBirth}
+              onChange={(date) => setDateOfBirth(date)}
+              onAgeCalculated={(calculatedAge) => setAge(calculatedAge)}
+              required
+            />
 
             {/* Sex */}
             <div>
@@ -1130,7 +1126,7 @@ export default function ProfileEditPage() {
               </p>
             </div>
 
-            {/* VIDEO SECTION - NEWLY ADDED */}
+            {/* VIDEO SECTION */}
             <div className="border-2 border-gray-300 dark:border-gray-600 rounded-xl p-6 bg-gray-50 dark:bg-gray-700/50">
               <div className="mb-4">
                 <label className="block text-lg font-bold text-gray-800 dark:text-gray-100 mb-2">
@@ -1256,6 +1252,3 @@ export default function ProfileEditPage() {
     </div>
   );
 }
-
-// Add missing useRef import
-import { useRef } from "react";
