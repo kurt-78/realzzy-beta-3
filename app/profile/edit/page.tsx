@@ -4,6 +4,254 @@ import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
+import { Play, Trash2, Plus, Loader2, RotateCcw, X } from "lucide-react";
+
+// Import video functions
+import {
+  uploadProfileVideo,
+  saveVideoMetadata,
+  getUserVideos,
+  deleteVideoMetadata,
+  deleteProfileVideo,
+  reorderVideos,
+} from "@/lib/supabase-videos";
+import type { ProfileVideo } from "@/types/profile-videos";
+
+// Video Recorder Component (inline to avoid import issues)
+function VideoRecorder({
+  onVideoRecorded,
+  onCancel,
+  maxDuration = 60,
+  minDuration = 15,
+}: {
+  onVideoRecorded: (blob: Blob, duration: number) => void;
+  onCancel: () => void;
+  maxDuration?: number;
+  minDuration?: number;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const rafRef = useRef<number | null>(null);
+  const startTimeRef = useRef<number>(0);
+  const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  const [recording, setRecording] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const [camera, setCamera] = useState<"user" | "environment">("user");
+  const [cameraReady, setCameraReady] = useState(false);
+  const [error, setError] = useState<string>("");
+  const [showMinDurationWarning, setShowMinDurationWarning] = useState(false);
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+  };
+
+  const remainingTime = maxDuration - elapsed;
+
+  useEffect(() => {
+    startCamera(camera);
+    return stopCamera;
+  }, []);
+
+  async function startCamera(facing: "user" | "environment") {
+    stopCamera();
+    setError("");
+    setCameraReady(false);
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: facing, width: { ideal: 1080 }, height: { ideal: 1920 } },
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      });
+
+      streamRef.current = stream;
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.onloadedmetadata = () => {
+          setCameraReady(true);
+          if (canvasRef.current && videoRef.current) {
+            canvasRef.current.width = videoRef.current.videoWidth;
+            canvasRef.current.height = videoRef.current.videoHeight;
+          }
+        };
+      }
+    } catch (err) {
+      console.error("Camera error:", err);
+      setError("Unable to access camera. Please grant camera permissions.");
+    }
+  }
+
+  function stopCamera() {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+  }
+
+  function startRecording() {
+    if (!streamRef.current || !cameraReady) return;
+
+    let finalStream: MediaStream;
+
+    if (camera === "user") {
+      const canvas = canvasRef.current!;
+      const ctx = canvas.getContext("2d")!;
+
+      function draw() {
+        if (!videoRef.current) return;
+        ctx.save();
+        ctx.scale(-1, 1);
+        ctx.drawImage(videoRef.current, -canvas.width, 0, canvas.width, canvas.height);
+        ctx.restore();
+        rafRef.current = requestAnimationFrame(draw);
+      }
+      draw();
+
+      finalStream = canvas.captureStream(30);
+      const audioTracks = streamRef.current.getAudioTracks();
+      if (audioTracks.length > 0) finalStream.addTrack(audioTracks[0]);
+    } else {
+      finalStream = streamRef.current;
+    }
+
+    const recorder = new MediaRecorder(finalStream, { mimeType: "video/webm" });
+    recorderRef.current = recorder;
+    chunksRef.current = [];
+
+    recorder.ondataavailable = (e) => {
+      if (e.data.size > 0) chunksRef.current.push(e.data);
+    };
+
+    recorder.onstop = () => {
+      const blob = new Blob(chunksRef.current, { type: "video/webm" });
+      const duration = Math.floor((Date.now() - startTimeRef.current) / 1000);
+
+      if (duration < minDuration) {
+        setShowMinDurationWarning(true);
+        setTimeout(() => setShowMinDurationWarning(false), 3000);
+        return;
+      }
+
+      onVideoRecorded(blob, duration);
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+
+    recorder.start();
+    setRecording(true);
+    setElapsed(0);
+    startTimeRef.current = Date.now();
+
+    timerIntervalRef.current = setInterval(() => {
+      const currentElapsed = Math.floor((Date.now() - startTimeRef.current) / 1000);
+      setElapsed(currentElapsed);
+      if (currentElapsed >= maxDuration) stopRecording();
+    }, 1000);
+  }
+
+  function stopRecording() {
+    if (recorderRef.current && recorderRef.current.state !== "inactive") {
+      recorderRef.current.stop();
+    }
+    setRecording(false);
+    if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+  }
+
+  function switchCamera() {
+    if (recording) return;
+    const newCamera = camera === "user" ? "environment" : "user";
+    setCamera(newCamera);
+    startCamera(newCamera);
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black z-50 flex flex-col">
+      <div className="absolute top-0 left-0 right-0 h-12 bg-gradient-to-b from-black/50 to-transparent z-10" />
+      
+      <div className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between px-4 pt-4">
+        <button onClick={onCancel} disabled={recording} className="w-10 h-10 flex items-center justify-center text-white">
+          <X className="w-7 h-7" />
+        </button>
+
+        {recording && (
+          <div className="flex flex-col items-center gap-1">
+            <div className="bg-red-500 text-white px-6 py-2.5 rounded-full font-bold text-lg shadow-lg">
+              {formatTime(elapsed)}
+            </div>
+            <div className="bg-red-500 text-white px-5 py-1.5 rounded-full text-sm font-medium shadow-lg flex items-center gap-2">
+              <div className="w-2 h-2 bg-white rounded-full animate-pulse" />
+              {remainingTime}s remaining
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="flex-1 relative overflow-hidden">
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          muted
+          className={`absolute inset-0 w-full h-full object-cover ${camera === "user" ? "scale-x-[-1]" : ""}`}
+        />
+        <canvas ref={canvasRef} className="hidden" />
+
+        {error && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/80">
+            <div className="text-white text-center px-6">
+              <p className="text-lg mb-4">{error}</p>
+              <button onClick={() => startCamera(camera)} className="bg-red-500 text-white px-6 py-3 rounded-full">
+                Try Again
+              </button>
+            </div>
+          </div>
+        )}
+
+        {showMinDurationWarning && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/80 pointer-events-none">
+            <div className="bg-red-500 text-white px-6 py-4 rounded-lg shadow-xl">
+              <p className="font-bold text-center">Video must be at least {minDuration} seconds</p>
+            </div>
+          </div>
+        )}
+
+        {!cameraReady && !error && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black">
+            <div className="text-white text-center">
+              <Loader2 className="w-12 h-12 animate-spin mx-auto mb-4" />
+              <p>Loading camera...</p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="absolute bottom-0 left-0 right-0 pb-8 pt-6 bg-gradient-to-t from-black/80 via-black/50 to-transparent z-20">
+        <div className="flex items-center justify-center gap-8 px-8">
+          <button onClick={switchCamera} disabled={recording || !cameraReady} className="w-14 h-14 rounded-full bg-white/10 flex items-center justify-center text-white disabled:opacity-50">
+            <RotateCcw className="w-7 h-7" />
+          </button>
+
+          <button onClick={() => recording ? stopRecording() : startRecording()} disabled={!cameraReady} className="w-20 h-20 rounded-full bg-white/90 flex items-center justify-center disabled:opacity-50">
+            <div className={recording ? "w-7 h-7 bg-red-500 rounded-sm" : "w-16 h-16 bg-red-500 rounded-full"} />
+          </button>
+
+          <div className="w-14 h-14" />
+        </div>
+
+        {!recording && cameraReady && (
+          <p className="text-white/70 text-center text-sm mt-4">Record {minDuration}-{maxDuration} second video</p>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export default function ProfileEditPage() {
   const router = useRouter();
@@ -33,11 +281,21 @@ export default function ProfileEditPage() {
   const [religion, setReligion] = useState("");
   const [description, setDescription] = useState("");
 
+  // Video state
+  const [videos, setVideos] = useState<ProfileVideo[]>([]);
+  const [showRecorder, setShowRecorder] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [playingVideo, setPlayingVideo] = useState<string | null>(null);
+  const [loadingVideos, setLoadingVideos] = useState(false);
+
   // Location state
   const [countries, setCountries] = useState<string[]>([]);
   const [states, setStates] = useState<string[]>([]);
   const [cities, setCities] = useState<string[]>([]);
   const [locationLoading, setLocationLoading] = useState(false);
+
+  const canAddMore = videos.length < 5;
+  const needsMoreVideos = videos.length < 2;
 
   useEffect(() => {
     checkUser();
@@ -55,6 +313,7 @@ export default function ProfileEditPage() {
 
     setUserId(user.id);
     loadProfile(user.id);
+    loadUserVideos(user.id);
   };
 
   const loadProfile = async (uid: string) => {
@@ -98,6 +357,72 @@ export default function ProfileEditPage() {
       if (data.country && data.state && data.country !== "United States") {
         fetchCities(data.country, data.state);
       }
+    }
+  };
+
+  const loadUserVideos = async (uid: string) => {
+    try {
+      setLoadingVideos(true);
+      const userVideos = await getUserVideos(uid);
+      setVideos(userVideos);
+    } catch (err) {
+      console.error("Error loading videos:", err);
+    } finally {
+      setLoadingVideos(false);
+    }
+  };
+
+  const handleVideoRecorded = async (blob: Blob, duration: number) => {
+    if (!userId) return;
+
+    try {
+      setUploading(true);
+      const uploadToast = toast.loading("Uploading video...");
+
+      const nextOrderIndex = videos.length;
+      const { videoUrl } = await uploadProfileVideo(userId, blob, nextOrderIndex);
+      const newVideo = await saveVideoMetadata(userId, videoUrl, duration, nextOrderIndex);
+
+      setVideos([...videos, newVideo]);
+      setShowRecorder(false);
+      toast.success("Video uploaded! 🎉", { id: uploadToast });
+    } catch (err: any) {
+      console.error("Error uploading video:", err);
+      toast.error(err.message || "Failed to upload video");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleDeleteVideo = async (video: ProfileVideo) => {
+    if (!confirm("Are you sure you want to delete this video?")) return;
+    if (!userId) return;
+
+    try {
+      setLoadingVideos(true);
+      const deleteToast = toast.loading("Deleting video...");
+
+      const url = new URL(video.video_url);
+      const pathMatch = url.pathname.match(/profile-videos\/(.+)$/);
+      if (pathMatch) await deleteProfileVideo(pathMatch[1]);
+
+      await deleteVideoMetadata(video.id);
+
+      const remainingVideos = videos
+        .filter((v) => v.id !== video.id)
+        .map((v, index) => ({ id: v.id, order_index: index }));
+
+      if (remainingVideos.length > 0) {
+        await reorderVideos(userId, remainingVideos);
+      }
+
+      await loadUserVideos(userId);
+      toast.success("Video deleted", { id: deleteToast });
+    } catch (err: any) {
+      console.error("Error deleting video:", err);
+      toast.error("Failed to delete video");
+    } finally {
+      setLoadingVideos(false);
     }
   };
 
@@ -218,6 +543,11 @@ export default function ProfileEditPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (needsMoreVideos) {
+      toast.error("Please add at least 2 videos before saving");
+      return;
+    }
 
     if (description.length < 20 || description.length > 300) {
       toast.error("Description must be between 20 and 300 characters");
@@ -366,6 +696,18 @@ export default function ProfileEditPage() {
 
   const feetOptions = Array.from({ length: 5 }, (_, i) => (i + 3).toString());
   const inchesOptions = Array.from({ length: 12 }, (_, i) => i.toString());
+
+  // If showing recorder, show it full screen
+  if (showRecorder) {
+    return (
+      <VideoRecorder
+        onVideoRecorded={handleVideoRecorded}
+        onCancel={() => setShowRecorder(false)}
+        maxDuration={60}
+        minDuration={15}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-pink-50 to-purple-50 dark:from-gray-900 dark:to-gray-800 py-8 px-4">
@@ -788,16 +1130,132 @@ export default function ProfileEditPage() {
               </p>
             </div>
 
+            {/* VIDEO SECTION - NEWLY ADDED */}
+            <div className="border-2 border-gray-300 dark:border-gray-600 rounded-xl p-6 bg-gray-50 dark:bg-gray-700/50">
+              <div className="mb-4">
+                <label className="block text-lg font-bold text-gray-800 dark:text-gray-100 mb-2">
+                  Profile Videos <span className="text-red-500">*</span>
+                </label>
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  Add {videos.length === 0 ? "2-5" : needsMoreVideos ? `${2 - videos.length} more` : "up to 5"} videos (15-60 seconds each)
+                </p>
+              </div>
+
+              {needsMoreVideos && (
+                <div className="bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700 text-amber-800 dark:text-amber-200 px-4 py-3 rounded-lg mb-4">
+                  <p className="font-semibold text-sm">⚠️ Minimum 2 videos required</p>
+                  <p className="text-sm mt-1">Add at least 2 videos to complete your profile</p>
+                </div>
+              )}
+
+              {uploading && (
+                <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 text-blue-800 dark:text-blue-200 px-4 py-3 rounded-lg mb-4 flex items-center gap-3">
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <span className="text-sm">Uploading your video...</span>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                {videos.map((video) => (
+                  <div key={video.id} className="relative aspect-[9/16] bg-gray-900 rounded-lg overflow-hidden group">
+                    <video
+                      src={video.video_url}
+                      className="w-full h-full object-cover cursor-pointer"
+                      loop
+                      playsInline
+                      muted={playingVideo !== video.id}
+                      onClick={() => {
+                        const videoElement = document.querySelector(`video[src="${video.video_url}"]`) as HTMLVideoElement;
+                        if (videoElement) {
+                          if (playingVideo === video.id) {
+                            videoElement.pause();
+                            setPlayingVideo(null);
+                          } else {
+                            document.querySelectorAll("video").forEach((v) => {
+                              if (v !== videoElement) v.pause();
+                            });
+                            videoElement.play();
+                            setPlayingVideo(video.id);
+                          }
+                        }
+                      }}
+                    />
+
+                    {playingVideo !== video.id && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/30 transition-colors pointer-events-none">
+                        <div className="w-12 h-12 bg-white/90 rounded-full flex items-center justify-center">
+                          <Play className="w-6 h-6 text-gray-900 ml-0.5" />
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/70 to-transparent pointer-events-none">
+                      <p className="text-white text-xs font-medium">{video.duration}s</p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteVideo(video)}
+                      className="absolute top-2 right-2 w-8 h-8 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600"
+                      disabled={loadingVideos}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+
+                    <div className="absolute top-2 left-2 w-6 h-6 bg-white text-gray-900 rounded-full flex items-center justify-center text-xs font-bold">
+                      {video.order_index + 1}
+                    </div>
+                  </div>
+                ))}
+
+                {canAddMore &&
+                  Array.from({ length: 5 - videos.length }).map((_, index) => (
+                    <button
+                      key={`empty-${index}`}
+                      type="button"
+                      onClick={() => setShowRecorder(true)}
+                      disabled={uploading}
+                      className="aspect-[9/16] bg-gray-100 dark:bg-gray-600 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-500 hover:border-pink-400 hover:bg-gray-50 dark:hover:bg-gray-500 transition-colors flex flex-col items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <div className="w-12 h-12 bg-pink-500 text-white rounded-full flex items-center justify-center">
+                        <Plus className="w-6 h-6" />
+                      </div>
+                      <p className="text-sm text-gray-700 dark:text-gray-200 font-medium">Add Video</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 px-2 text-center">15-60 sec</p>
+                    </button>
+                  ))}
+              </div>
+
+              <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-600">
+                <h3 className="font-semibold text-gray-900 dark:text-gray-100 text-sm mb-2">📹 Video Tips</h3>
+                <ul className="space-y-1 text-xs text-gray-600 dark:text-gray-400">
+                  <li>• Videos must be 15-60 seconds long</li>
+                  <li>• Show your personality and interests</li>
+                  <li>• Use good lighting for best results</li>
+                  <li>• Minimum 2 videos required</li>
+                </ul>
+              </div>
+            </div>
+
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || needsMoreVideos}
               className="w-full py-4 px-6 bg-gradient-to-r from-pink-500 to-purple-500 text-white font-semibold rounded-lg hover:from-pink-600 hover:to-purple-600 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-lg"
             >
-              {loading ? "Saving..." : "Save Profile"}
+              {loading ? "Saving..." : needsMoreVideos ? `Add ${2 - videos.length} More Video(s) to Save` : "Save Profile"}
             </button>
+
+            {needsMoreVideos && (
+              <p className="text-center text-sm text-gray-500 dark:text-gray-400">
+                You need at least 2 videos to save your profile
+              </p>
+            )}
           </form>
         </div>
       </div>
     </div>
   );
 }
+
+// Add missing useRef import
+import { useRef } from "react";

@@ -1,24 +1,21 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient } from '@/lib/supabase/client';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Use your existing client creation method
+const getSupabaseClient = () => createClient();
 
 /**
  * Upload video to Supabase storage
- * @param userId - The user's ID
- * @param videoBlob - The video blob to upload
- * @param orderIndex - The order index of the video (0-4)
- * @returns The public URL of the uploaded video
  */
 export async function uploadProfileVideo(
   userId: string,
   videoBlob: Blob,
   orderIndex: number
 ): Promise<{ videoUrl: string; videoPath: string }> {
+  const supabase = getSupabaseClient();
   const timestamp = Date.now();
   const fileName = `${userId}/video_${orderIndex}_${timestamp}.webm`;
+
+  console.log('Uploading to:', fileName);
 
   const { data, error } = await supabase.storage
     .from('profile-videos')
@@ -28,6 +25,7 @@ export async function uploadProfileVideo(
     });
 
   if (error) {
+    console.error('Upload error:', error);
     throw new Error(`Failed to upload video: ${error.message}`);
   }
 
@@ -43,9 +41,10 @@ export async function uploadProfileVideo(
 
 /**
  * Delete video from Supabase storage
- * @param videoPath - The path of the video in storage
  */
 export async function deleteProfileVideo(videoPath: string): Promise<void> {
+  const supabase = getSupabaseClient();
+  
   const { error } = await supabase.storage
     .from('profile-videos')
     .remove([videoPath]);
@@ -64,6 +63,8 @@ export async function saveVideoMetadata(
   duration: number,
   orderIndex: number
 ) {
+  const supabase = getSupabaseClient();
+  
   const { data, error } = await supabase
     .from('profile_videos')
     .insert({
@@ -86,6 +87,8 @@ export async function saveVideoMetadata(
  * Get all videos for a user
  */
 export async function getUserVideos(userId: string) {
+  const supabase = getSupabaseClient();
+  
   const { data, error } = await supabase
     .from('profile_videos')
     .select('*')
@@ -96,13 +99,15 @@ export async function getUserVideos(userId: string) {
     throw new Error(`Failed to fetch user videos: ${error.message}`);
   }
 
-  return data;
+  return data || [];
 }
 
 /**
  * Delete video metadata from database
  */
 export async function deleteVideoMetadata(videoId: string) {
+  const supabase = getSupabaseClient();
+  
   const { error } = await supabase
     .from('profile_videos')
     .delete()
@@ -117,6 +122,8 @@ export async function deleteVideoMetadata(videoId: string) {
  * Update video order indices after deletion
  */
 export async function reorderVideos(userId: string, videos: { id: string; order_index: number }[]) {
+  const supabase = getSupabaseClient();
+  
   const updates = videos.map((video) =>
     supabase
       .from('profile_videos')
@@ -131,6 +138,7 @@ export async function reorderVideos(userId: string, videos: { id: string; order_
  * Get current user from Supabase auth
  */
 export async function getCurrentUser() {
+  const supabase = getSupabaseClient();
   const { data: { user }, error } = await supabase.auth.getUser();
   
   if (error || !user) {
