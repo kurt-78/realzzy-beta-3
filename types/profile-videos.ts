@@ -25,3 +25,12 @@ export interface CameraConstraints {
   };
   audio: boolean;
 }
+
+export interface ProfileVideo {
+  id: string;
+  user_id: string;
+  video_url: string;
+  duration: number;
+  order_index: number;
+  created_at: string;
+}

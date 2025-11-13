@@ -861,39 +861,22 @@ export default function ProfileEditPage() {
               required
             />
 
-            {/* Sex */}
+            {/* I am seeking - CLEARER FORMAT */}
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Sex <span className="text-red-500">*</span>
-              </label>
-              <select
-                required
-                value={sex}
-                onChange={(e) => setSex(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-pink-500"
-              >
-                <option value="">-- Choose an option --</option>
-                {sexOptions.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Looking For */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Looking For <span className="text-red-500">*</span>
+                Gender & Preference <span className="text-red-500">*</span>
               </label>
               <div className="flex items-center gap-3">
+                <span className="text-gray-700 dark:text-gray-300 font-medium whitespace-nowrap">
+                  I am
+                </span>
                 <select
                   required
-                  value={lookingForSex}
-                  onChange={(e) => setLookingForSex(e.target.value)}
+                  value={sex}
+                  onChange={(e) => setSex(e.target.value)}
                   className="flex-1 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-pink-500"
                 >
-                  <option value="">-- Choose --</option>
+                  <option value="">-- Select --</option>
                   {sexOptions.map((option) => (
                     <option key={option} value={option}>
                       {option}
@@ -901,17 +884,17 @@ export default function ProfileEditPage() {
                   ))}
                 </select>
                 
-                <span className="text-gray-600 dark:text-gray-300 font-medium">
+                <span className="text-gray-700 dark:text-gray-300 font-medium whitespace-nowrap">
                   seeking
                 </span>
                 
                 <select
                   required
-                  value={lookingForRelationType}
-                  onChange={(e) => setLookingForRelationType(e.target.value)}
+                  value={lookingForSex}
+                  onChange={(e) => setLookingForSex(e.target.value)}
                   className="flex-1 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-pink-500"
                 >
-                  <option value="">-- Choose --</option>
+                  <option value="">-- Select --</option>
                   {lookingForOptions.map((option) => (
                     <option key={option} value={option}>
                       {option}
@@ -919,6 +902,30 @@ export default function ProfileEditPage() {
                   ))}
                 </select>
               </div>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                Select your gender and who you're looking for
+              </p>
+            </div>
+
+            {/* Relationship Type */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Relationship Type <span className="text-red-500">*</span>
+              </label>
+              <select
+                required
+                value={lookingForRelationType}
+                onChange={(e) => setLookingForRelationType(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-pink-500"
+              >
+                <option value="">-- Choose an option --</option>
+                <option value="Long-term">Long-term</option>
+                <option value="Short-term">Short-term</option>
+                <option value="Casual">Casual</option>
+                <option value="Friendship">Friendship</option>
+                <option value="Marriage">Marriage</option>
+                <option value="Open to anything">Open to anything</option>
+              </select>
             </div>
 
             {/* Ethnicity */}
