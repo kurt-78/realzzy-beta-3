@@ -40,6 +40,11 @@ function VideoPlayer({ videos }: { videos: ProfileVideo[] }) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+  const [touchStart, setTouchStart] = useState<number | null>(null);
+  const [touchEnd, setTouchEnd] = useState<number | null>(null);
+
+  // Minimum swipe distance (in px)
+  const minSwipeDistance = 50;
 
   const nextVideo = () => {
     setCurrentIndex((prev) => (prev + 1) % videos.length);
@@ -49,6 +54,30 @@ function VideoPlayer({ videos }: { videos: ProfileVideo[] }) {
   const prevVideo = () => {
     setCurrentIndex((prev) => (prev - 1 + videos.length) % videos.length);
     setIsPlaying(false);
+  };
+
+  const onTouchStart = (e: React.TouchEvent) => {
+    setTouchEnd(null);
+    setTouchStart(e.targetTouches[0].clientX);
+  };
+
+  const onTouchMove = (e: React.TouchEvent) => {
+    setTouchEnd(e.targetTouches[0].clientX);
+  };
+
+  const onTouchEnd = () => {
+    if (!touchStart || !touchEnd) return;
+    
+    const distance = touchStart - touchEnd;
+    const isLeftSwipe = distance > minSwipeDistance;
+    const isRightSwipe = distance < -minSwipeDistance;
+
+    if (isLeftSwipe && videos.length > 1) {
+      nextVideo();
+    }
+    if (isRightSwipe && videos.length > 1) {
+      prevVideo();
+    }
   };
 
   const togglePlay = () => {
@@ -88,7 +117,13 @@ function VideoPlayer({ videos }: { videos: ProfileVideo[] }) {
 
   return (
     <div className="sticky top-4">
-      <div className="relative aspect-[9/16] bg-gray-900 rounded-xl overflow-hidden group">
+      <div 
+        className="relative aspect-[9/16] bg-gray-900 rounded-xl overflow-hidden group"
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
+        onContextMenu={(e) => e.preventDefault()}
+      >
         <video
           key={videos[currentIndex].id}
           data-profile-video-id={videos[currentIndex].id}
@@ -97,6 +132,9 @@ function VideoPlayer({ videos }: { videos: ProfileVideo[] }) {
           loop
           playsInline
           muted={isMuted}
+          controlsList="nodownload"
+          disablePictureInPicture
+          onContextMenu={(e) => e.preventDefault()}
           onClick={togglePlay}
         />
 

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { Play, ChevronLeft, ChevronRight } from "lucide-react";
+import { Play, ChevronLeft, ChevronRight, VolumeX, Volume2 } from "lucide-react";
 import Link from "next/link";
 
 interface ProfileVideo {
@@ -28,6 +28,12 @@ interface Profile {
 function VideoSlider({ videos, userName }: { videos: ProfileVideo[]; userName: string }) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isMuted, setIsMuted] = useState(true);
+  const [touchStart, setTouchStart] = useState<number | null>(null);
+  const [touchEnd, setTouchEnd] = useState<number | null>(null);
+
+  // Minimum swipe distance (in px)
+  const minSwipeDistance = 50;
 
   const nextVideo = () => {
     setCurrentIndex((prev) => (prev + 1) % videos.length);
@@ -37,6 +43,30 @@ function VideoSlider({ videos, userName }: { videos: ProfileVideo[]; userName: s
   const prevVideo = () => {
     setCurrentIndex((prev) => (prev - 1 + videos.length) % videos.length);
     setIsPlaying(false);
+  };
+
+  const onTouchStart = (e: React.TouchEvent) => {
+    setTouchEnd(null);
+    setTouchStart(e.targetTouches[0].clientX);
+  };
+
+  const onTouchMove = (e: React.TouchEvent) => {
+    setTouchEnd(e.targetTouches[0].clientX);
+  };
+
+  const onTouchEnd = () => {
+    if (!touchStart || !touchEnd) return;
+    
+    const distance = touchStart - touchEnd;
+    const isLeftSwipe = distance > minSwipeDistance;
+    const isRightSwipe = distance < -minSwipeDistance;
+
+    if (isLeftSwipe && videos.length > 1) {
+      nextVideo();
+    }
+    if (isRightSwipe && videos.length > 1) {
+      prevVideo();
+    }
   };
 
   const togglePlay = () => {
@@ -55,6 +85,18 @@ function VideoSlider({ videos, userName }: { videos: ProfileVideo[]; userName: s
     }
   };
 
+  const toggleMute = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const videoElement = document.querySelector(
+      `video[data-video-id="${videos[currentIndex].id}"]`
+    ) as HTMLVideoElement;
+    
+    if (videoElement) {
+      videoElement.muted = !isMuted;
+      setIsMuted(!isMuted);
+    }
+  };
+
   if (!videos || videos.length === 0) {
     return (
       <div className="relative aspect-[9/16] bg-gray-200 dark:bg-gray-700 rounded-t-xl flex items-center justify-center">
@@ -64,7 +106,13 @@ function VideoSlider({ videos, userName }: { videos: ProfileVideo[]; userName: s
   }
 
   return (
-    <div className="relative aspect-[9/16] bg-gray-900 rounded-t-xl overflow-hidden group">
+    <div 
+      className="relative aspect-[9/16] bg-gray-900 rounded-t-xl overflow-hidden group"
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+      onContextMenu={(e) => e.preventDefault()}
+    >
       <video
         key={videos[currentIndex].id}
         data-video-id={videos[currentIndex].id}
@@ -72,7 +120,10 @@ function VideoSlider({ videos, userName }: { videos: ProfileVideo[]; userName: s
         className="w-full h-full object-cover cursor-pointer"
         loop
         playsInline
-        muted
+        muted={isMuted}
+        controlsList="nodownload"
+        disablePictureInPicture
+        onContextMenu={(e) => e.preventDefault()}
         onClick={togglePlay}
       />
 
@@ -87,6 +138,14 @@ function VideoSlider({ videos, userName }: { videos: ProfileVideo[]; userName: s
           </div>
         </div>
       )}
+
+      {/* Mute/Unmute Button */}
+      <button
+        onClick={toggleMute}
+        className="absolute top-4 left-4 w-10 h-10 bg-black/70 text-white rounded-full flex items-center justify-center hover:bg-black/90 transition-colors z-10"
+      >
+        {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
+      </button>
 
       {/* Video Navigation */}
       {videos.length > 1 && (
