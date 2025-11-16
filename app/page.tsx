@@ -2,8 +2,10 @@
 
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { Play, ChevronLeft, ChevronRight, VolumeX, Volume2 } from "lucide-react";
+import { Play, ChevronLeft, ChevronRight, VolumeX, Volume2, Heart } from "lucide-react";
 import Link from "next/link";
+import Header from "@/components/Header";
+import toast from "react-hot-toast";
 
 interface ProfileVideo {
   id: string;
@@ -23,6 +25,116 @@ interface Profile {
   country: string | null;
   looking_for_sex: string;
   videos: ProfileVideo[];
+}
+
+// Like Button Component (inline for this file)
+function LikeButton({ profileId, currentUserId }: { profileId: string; currentUserId: string | null }) {
+  const [isLiked, setIsLiked] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (currentUserId) {
+      checkIfLiked();
+    }
+  }, [currentUserId, profileId]);
+
+  const checkIfLiked = async () => {
+    if (!currentUserId) return;
+    
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("profile_likes")
+        .select("id")
+        .eq("liker_id", currentUserId)
+        .eq("liked_id", profileId)
+        .maybeSingle();
+
+      if (error) {
+        console.error("Error checking like status:", error);
+        return;
+      }
+
+      setIsLiked(!!data);
+    } catch (err) {
+      console.error("Error in checkIfLiked:", err);
+    }
+  };
+
+  const handleLike = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (!currentUserId) {
+      toast.error("Please log in to like profiles");
+      return;
+    }
+
+    if (currentUserId === profileId) {
+      toast.error("You cannot like your own profile");
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const supabase = createClient();
+
+      if (isLiked) {
+        // Unlike
+        const { error } = await supabase
+          .from("profile_likes")
+          .delete()
+          .eq("liker_id", currentUserId)
+          .eq("liked_id", profileId);
+
+        if (error) {
+          console.error("Unlike error:", error);
+          throw new Error(error.message || "Failed to unlike");
+        }
+
+        setIsLiked(false);
+        toast.success("Like removed");
+      } else {
+        // Like
+        const { error } = await supabase
+          .from("profile_likes")
+          .insert({
+            liker_id: currentUserId,
+            liked_id: profileId,
+          });
+
+        if (error) {
+          console.error("Like error:", error);
+          throw new Error(error.message || "Failed to like");
+        }
+
+        setIsLiked(true);
+        toast.success("Profile liked! 💕");
+      }
+    } catch (err: any) {
+      console.error("Error toggling like:", err);
+      toast.error(err.message || "Failed to update like. Please make sure you've run the database setup.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!currentUserId || currentUserId === profileId) return null;
+
+  return (
+    <button
+      onClick={handleLike}
+      disabled={loading}
+      className={`w-10 h-10 rounded-full flex items-center justify-center transition-all disabled:opacity-50 ${
+        isLiked
+          ? "bg-pink-500 text-white hover:bg-pink-600"
+          : "bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-pink-50 dark:hover:bg-gray-600 border-2 border-gray-300 dark:border-gray-600"
+      }`}
+    >
+      <Heart className={`w-5 h-5 ${isLiked ? "fill-current" : ""}`} />
+    </button>
+  );
 }
 
 function VideoSlider({ videos, userName }: { videos: ProfileVideo[]; userName: string }) {
@@ -199,7 +311,7 @@ function VideoSlider({ videos, userName }: { videos: ProfileVideo[]; userName: s
   );
 }
 
-function ProfileCard({ profile }: { profile: Profile }) {
+function ProfileCard({ profile, currentUserId }: { profile: Profile; currentUserId: string | null }) {
   const location = [profile.city, profile.state, profile.country]
     .filter(Boolean)
     .join(", ");
@@ -260,12 +372,15 @@ function ProfileCard({ profile }: { profile: Profile }) {
           )}
         </div>
 
-        <Link
-          href={`/profile/${profile.id}`}
-          className="mt-4 block w-full py-2 px-4 bg-gradient-to-r from-pink-500 to-purple-500 text-white font-semibold rounded-lg hover:from-pink-600 hover:to-purple-600 transition-all text-center"
-        >
-          View Profile
-        </Link>
+        <div className="mt-4 flex gap-2">
+          <Link
+            href={`/profile/${profile.id}`}
+            className="flex-1 py-2 px-4 bg-gradient-to-r from-pink-500 to-purple-500 text-white font-semibold rounded-lg hover:from-pink-600 hover:to-purple-600 transition-all text-center"
+          >
+            View Profile
+          </Link>
+          <LikeButton profileId={profile.id} currentUserId={currentUserId} />
+        </div>
       </div>
     </div>
   );
@@ -275,10 +390,21 @@ export default function HomePage() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   useEffect(() => {
+    checkAuth();
     loadProfiles();
   }, []);
+
+  const checkAuth = async () => {
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (user) {
+      setCurrentUserId(user.id);
+    }
+  };
 
   const loadProfiles = async () => {
     try {
@@ -341,27 +467,7 @@ export default function HomePage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-pink-50 to-purple-50 dark:from-gray-900 dark:to-gray-800">
       {/* Header */}
-      <header className="bg-white dark:bg-gray-800 shadow-sm sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-pink-500 to-purple-500">
-            Realzzy
-          </h1>
-          <div className="flex items-center gap-4">
-            <Link
-              href="/auth/login"
-              className="text-gray-700 dark:text-gray-300 hover:text-pink-500 dark:hover:text-pink-400 font-medium"
-            >
-              Login
-            </Link>
-            <Link
-              href="/auth/signup"
-              className="px-4 py-2 bg-gradient-to-r from-pink-500 to-purple-500 text-white font-semibold rounded-lg hover:from-pink-600 hover:to-purple-600 transition-all"
-            >
-              Sign Up
-            </Link>
-          </div>
-        </div>
-      </header>
+      <Header />
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 py-8">
@@ -403,7 +509,7 @@ export default function HomePage() {
         {!loading && !error && profiles.length > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {profiles.map((profile) => (
-              <ProfileCard key={profile.id} profile={profile} />
+              <ProfileCard key={profile.id} profile={profile} currentUserId={currentUserId} />
             ))}
           </div>
         )}
